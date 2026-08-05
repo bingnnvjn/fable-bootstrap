@@ -24,20 +24,20 @@ jobs:
       - name: Pull package builder image
         run: docker pull ghcr.io/termux/package-builder:latest
 
+      - name: Create builder container
+        run: ./scripts/run-docker.sh bash -c 'true'
+
+      # termux-am (bootstrap dependency via termux-core) builds with Gradle and
+      # needs platforms;android-33 + build-tools;30.0.3, which are not in the
+      # package-builder image. Gradle auto-install invokes sdkmanager, which
+      # fails because the SDK dir is not writable by builder (and the image's
+      # sudo panics), so install the components as root via docker exec from the
+      # official Google archives instead.
       - name: Install Android SDK components needed by termux-am
         run: |
-          ./scripts/run-docker.sh bash -c '
+          docker exec -u root termux-package-builder bash -c '
             set -euo pipefail
-            source scripts/properties.sh
-            export ANDROID_HOME="${ANDROID_HOME:-$HOME/lib/android-sdk-$TERMUX_SDK_REVISION}"
-            # The SDK dir in the image is not writable by builder; make it so
-            # (Gradle sdkmanager auto-install already fails because of this).
-            sudo chown -R builder:builder "$ANDROID_HOME"
-            # termux-am (bootstrap dependency via termux-core) builds with Gradle
-            # and needs platforms;android-33 + build-tools;30.0.3, which are not
-            # in the package-builder image. Gradle auto-install invokes sdkmanager,
-            # which panics in this container ("could not restore to saved user id"),
-            # so install the components manually from the official Google archives.
+            ANDROID_HOME=/home/builder/lib/android-sdk-9123335
             mkdir -p "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" /tmp/sdk-install
             cd /tmp/sdk-install
             if [ ! -d "$ANDROID_HOME/platforms/android-33" ]; then
