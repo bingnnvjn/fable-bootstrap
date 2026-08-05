@@ -24,6 +24,19 @@ jobs:
       - name: Pull package builder image
         run: docker pull ghcr.io/termux/package-builder:latest
 
+      - name: Preinstall Android SDK components needed by termux-am
+        run: |
+          ./scripts/run-docker.sh bash -c '
+            set -euo pipefail
+            source scripts/properties.sh
+            export ANDROID_HOME="${ANDROID_HOME:-$HOME/lib/android-sdk-$TERMUX_SDK_REVISION}"
+            # Guard against any read-only/ownership issue in the SDK dir.
+            sudo chown -R builder:builder "$ANDROID_HOME" || true
+            SDK_MANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+            [ -x "$SDK_MANAGER" ] || SDK_MANAGER="$ANDROID_HOME/cmdline-tools/bin/sdkmanager"
+            yes | "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" "platforms;android-33" "build-tools;30.0.3"
+          '
+
       - name: Build bootstrap packages and archive (aarch64)
         run: ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
 
