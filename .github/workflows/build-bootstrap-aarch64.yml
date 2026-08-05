@@ -24,17 +24,29 @@ jobs:
       - name: Pull package builder image
         run: docker pull ghcr.io/termux/package-builder:latest
 
-      - name: Preinstall Android SDK components needed by termux-am
+      - name: Install Android SDK components needed by termux-am
         run: |
           ./scripts/run-docker.sh bash -c '
             set -euo pipefail
             source scripts/properties.sh
             export ANDROID_HOME="${ANDROID_HOME:-$HOME/lib/android-sdk-$TERMUX_SDK_REVISION}"
-            # Guard against any read-only/ownership issue in the SDK dir.
-            sudo chown -R builder:builder "$ANDROID_HOME" || true
-            SDK_MANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-            [ -x "$SDK_MANAGER" ] || SDK_MANAGER="$ANDROID_HOME/cmdline-tools/bin/sdkmanager"
-            yes | "$SDK_MANAGER" --sdk_root="$ANDROID_HOME" "platforms;android-33" "build-tools;30.0.3"
+            # termux-am (bootstrap dependency via termux-core) builds with Gradle
+            # and needs platforms;android-33 + build-tools;30.0.3, which are not
+            # in the package-builder image. Gradle auto-install invokes sdkmanager,
+            # which panics in this container ("could not restore to saved user id"),
+            # so install the components manually from the official Google archives.
+            mkdir -p "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" /tmp/sdk-install
+            cd /tmp/sdk-install
+            if [ ! -d "$ANDROID_HOME/platforms/android-33" ]; then
+              curl -fL --retry 5 -o platform-33.zip https://dl.google.com/android/repository/platform-33-ext3_r03.zip
+              unzip -q platform-33.zip
+              mv android-13 "$ANDROID_HOME/platforms/android-33"
+            fi
+            if [ ! -d "$ANDROID_HOME/build-tools/30.0.3" ]; then
+              curl -fL --retry 5 -o build-tools-30.zip https://dl.google.com/android/repository/build-tools_r30.0.3-linux.zip
+              unzip -q build-tools-30.zip
+              mv android-11 "$ANDROID_HOME/build-tools/30.0.3"
+            fi
           '
 
       - name: Build bootstrap packages and archive (aarch64)
