@@ -1,0 +1,131 @@
+name: Build Fable bootstrap (aarch64, apt-android-7)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: build-fable-bootstrap
+  cancel-in-progress: true
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pull package builder image
+        run: docker pull ghcr.io/termux/package-builder:latest
+
+      - name: Build bootstrap packages and archive (aarch64)
+        run: ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
+
+      - name: Verify bootstrap has no com.termux paths
+        run: |
+          set -euo pipefail
+          verify_dir="$(mktemp -d)"
+          unzip -q bootstrap-aarch64.zip -d "$verify_dir"
+          files=(
+            "SYMLINKS.txt"
+            "etc/termux/bootstrap/termux-bootstrap-second-stage.sh"
+            "etc/profile.d/01-termux-bootstrap-second-stage-fallback.sh"
+          )
+          for file in "${files[@]}"; do
+            if grep -q 'com\.termux' "$verify_dir/$file"; then
+              echo "FAIL: '$file' contains com.termux" 1>&2
+              exit 1
+            fi
+          done
+          for bin in bash dpkg apt apt-get; do
+            if strings "$verify_dir/bin/$bin" | grep -q '/data/data/com\.termux'; then
+              echo "FAIL: bin/$bin contains /data/data/com.termux" 1>&2
+              exit 1
+            fi
+          done
+          total="$(grep -rl 'com\.termux' "$verify_dir" | wc -l)"
+          echo "OK: SYMLINKS.txt, second stage scripts and bin/bash|dpkg|apt have 0 com.termux references (whole-zip files containing the string: $total)"
+
+      - name: Compute checksum and write bootstrap info
+        run: |
+          set -euo pipefail
+          sha256sum bootstrap-aarch64.zip > bootstrap-aarch64.zip.sha256
+          {
+            echo "Fable bootstrap (com.gph.fable) build info"
+            echo "built_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "commit: $GITHUB_SHA"
+            echo "termux-packages import: $(git log -1 --format='%H %s')"
+            echo "variant: apt-android-7"
+            echo "arch: aarch64"
+            echo "TERMUX_APP__PACKAGE_NAME: com.gph.fable"
+            echo "TERMUX_PREFIX: /data/data/com.gph.fable/files/usr"
+            echo "TERMUX_HOME: /data/data/com.gph.fable/files/home"
+            echo "second_stage: /data/data/com.gph.fable/files/usr/etc/termux/bootstrap/termux-bootstrap-second-stage.sh"
+            echo "zip_entries: $(unzip -Z1 bootstrap-aarch64.zip | wc -l)"
+            echo "built_packages:"
+            ls -1 output/*.deb | sed 's/^output\///'
+          } > bootstrap-info.txt
+
+      - name: Store bootstrap artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-aarch64
+          path: |
+            bootstrap-aarch64.zip
+            bootstrap-aarch64.zip.sha256
+            bootstrap-info.txt
+
+      - name: Archive built debs
+        run: tar -czf debs-aarch64.tar.gz output/
+
+      - name: Store debs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debs-aarch64
+          path: debs-aarch64.tar.gz
+
+  publish:
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: ./release-files
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          new_date_tag="bootstrap-$(date -u "+%Y.%m.%d")"
+          existing_tags="$(git ls-remote --tags origin 2>/dev/null | awk '{print $2}' | sed 's#refs/tags/##' | grep -E "^${new_date_tag}-r[0-9]+\+apt-android-7$" || true)"
+          if [ -n "$existing_tags" ]; then
+            rev="$(printf '%s\n' "$existing_tags" | sed -E "s/^${new_date_tag}-r([0-9]+)\+apt-android-7$/\1/" | sort -n | tail -n 1)"
+            rev=$((rev + 1))
+          else
+            rev=1
+          fi
+          new_tag="${new_date_tag}-r${rev}+apt-android-7"
+          echo "Release tag: $new_tag"
+          if gh release view "$new_tag" >/dev/null 2>&1; then
+            gh release upload "$new_tag" release-files/* --clobber
+          else
+            gh release create "$new_tag" release-files/* \
+              --title "Fable bootstrap (aarch64, apt-android-7)" \
+              --notes "Bootstrap archive for com.gph.fable (TERMUX_PREFIX=/data/data/com.gph.fable/files/usr). Triggered by workflow run $GITHUB_RUN_ID."
+          fi
