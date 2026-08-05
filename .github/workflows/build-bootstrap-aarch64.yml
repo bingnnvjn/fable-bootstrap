@@ -27,32 +27,38 @@ jobs:
       - name: Create builder container
         run: ./scripts/run-docker.sh bash -c 'true'
 
-      # termux-am (bootstrap dependency via termux-core) builds with Gradle and
-      # needs platforms;android-33 + build-tools;30.0.3, which are not in the
-      # package-builder image. Gradle auto-install invokes sdkmanager, which
-      # fails because the SDK dir is not writable by builder (and the image's
-      # sudo panics), so install the components as root via docker exec from the
-      # official Google archives instead.
-      - name: Install Android SDK components needed by termux-am
+      # The package builder's restricted AppArmor profile denies writes to
+      # /home/builder/lib (where the image SDK lives), so Gradle's SDK
+      # auto-install for termux-am (platforms;android-33, build-tools;30.0.3)
+      # fails. Copy the SDK to a writable path and add the missing components
+      # there; the build step then points ANDROID_HOME at the copy.
+      - name: Prepare writable Android SDK with termux-am components
         run: |
           docker exec -u root termux-package-builder bash -c '
             set -euo pipefail
-            ANDROID_HOME=/home/builder/lib/android-sdk-9123335
-            mkdir -p "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" /tmp/sdk-install
+            SRC=/home/builder/lib/android-sdk-9123335
+            DST=/home/builder/sdk-writable
+            if [ ! -d "$DST" ]; then
+              cp -a "$SRC" "$DST"
+            fi
+            chown -R builder:builder "$DST"
+            mkdir -p "$DST/platforms" "$DST/build-tools" /tmp/sdk-install
             cd /tmp/sdk-install
-            if [ ! -d "$ANDROID_HOME/platforms/android-33" ]; then
+            if [ ! -d "$DST/platforms/android-33" ]; then
               curl -fL --retry 5 -o platform-33.zip https://dl.google.com/android/repository/platform-33-ext3_r03.zip
               unzip -q platform-33.zip
-              mv android-13 "$ANDROID_HOME/platforms/android-33"
+              mv android-13 "$DST/platforms/android-33"
             fi
-            if [ ! -d "$ANDROID_HOME/build-tools/30.0.3" ]; then
+            if [ ! -d "$DST/build-tools/30.0.3" ]; then
               curl -fL --retry 5 -o build-tools-30.zip https://dl.google.com/android/repository/build-tools_r30.0.3-linux.zip
               unzip -q build-tools-30.zip
-              mv android-11 "$ANDROID_HOME/build-tools/30.0.3"
+              mv android-11 "$DST/build-tools/30.0.3"
             fi
           '
 
       - name: Build bootstrap packages and archive (aarch64)
+        env:
+          TERMUX_DOCKER_EXEC_EXTRA_ARGS: --env ANDROID_HOME=/home/builder/sdk-writable
         run: ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
 
       - name: Verify bootstrap has no com.termux paths
