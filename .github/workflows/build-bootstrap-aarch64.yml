@@ -30,6 +30,9 @@ jobs:
             set -euo pipefail
             source scripts/properties.sh
             export ANDROID_HOME="${ANDROID_HOME:-$HOME/lib/android-sdk-$TERMUX_SDK_REVISION}"
+            # The SDK dir in the image is not writable by builder; make it so
+            # (Gradle's sdkmanager auto-install already fails because of this).
+            sudo chown -R builder:builder "$ANDROID_HOME"
             # termux-am (bootstrap dependency via termux-core) builds with Gradle
             # and needs platforms;android-33 + build-tools;30.0.3, which are not
             # in the package-builder image. Gradle auto-install invokes sdkmanager,
