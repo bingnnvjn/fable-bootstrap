@@ -22,6 +22,16 @@ TERMUX_PKG_DEPENDS="bzip2, coreutils, curl, dash, diffutils, findutils, gawk, gr
 TERMUX_PKG_RECOMMENDS="ed, dos2unix, inetutils, net-tools, patch, unzip"
 
 termux_step_pre_configure() {
+	# Fable fork: termux-tools configure defaults TERMUX_APP_PACKAGE to
+	# com.termux and derives TERMUX_BASE_DIR/TERMUX_CACHE_DIR/TERMUX_PREFIX
+	# from it, which bakes /data/data/com.termux fallback paths into the
+	# installed scripts. Export the fork identity so the generated scripts
+	# use /data/data/com.gph.fable paths instead.
+	export TERMUX_APP_PACKAGE="${TERMUX_APP_PACKAGE:-$TERMUX_APP__PACKAGE_NAME}"
+	export TERMUX_BASE_DIR="${TERMUX_BASE_DIR:-$TERMUX__ROOTFS}"
+	export TERMUX_CACHE_DIR="${TERMUX_CACHE_DIR:-$TERMUX__CACHE_DIR}"
+	export TERMUX_PREFIX="${TERMUX_PREFIX:-$TERMUX__PREFIX}"
+	export TERMUX_ANDROID_HOME="${TERMUX_ANDROID_HOME:-$TERMUX__HOME}"
 	autoreconf -vfi
 }
 
