@@ -246,7 +246,11 @@ create_bootstrap_archive() {
 		zip -r9 "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" ./*
 	)
 
-	mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_PACKAGES_DIRECTORY/"
+	# Fable fork: write the archive into output/ instead of the repository root.
+	# The package builder AppArmor profile only allows writes under output/
+	# (deny /home/builder/termux-packages/[^o]**), and output/ is visible to
+	# the host because the repository is bind-mounted.
+	mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_BUILT_DEBS_DIRECTORY/"
 
 	echo "[*] Finished successfully (${1})."
 

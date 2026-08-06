@@ -27,6 +27,24 @@ jobs:
       - name: Create builder container
         run: ./scripts/run-docker.sh bash -c 'true'
 
+      - name: Check writable paths inside builder container
+        run: |
+          ./scripts/run-docker.sh bash -c '
+            set -u
+            if touch /home/builder/termux-packages/.writetest 2>/dev/null; then
+              echo "REPO_ROOT_WRITE=ok"
+              rm -f /home/builder/termux-packages/.writetest
+            else
+              echo "REPO_ROOT_WRITE=denied"
+            fi
+            if touch /home/builder/termux-packages/output/.writetest 2>/dev/null; then
+              echo "OUTPUT_DIR_WRITE=ok"
+              rm -f /home/builder/termux-packages/output/.writetest
+            else
+              echo "OUTPUT_DIR_WRITE=denied"
+            fi
+          '
+
       # The package builder's restricted AppArmor profile denies writes to
       # /home/builder/lib (where the image SDK lives), so Gradle's SDK
       # auto-install for termux-am (platforms;android-33, build-tools;30.0.3)
@@ -61,10 +79,25 @@ jobs:
           TERMUX_DOCKER_EXEC_EXTRA_ARGS: --env ANDROID_HOME=/home/builder/sdk-writable
         run: ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
 
+      - name: Collect bootstrap zip
+        run: |
+          set -euo pipefail
+          if [ -f bootstrap-aarch64.zip ]; then
+            echo "zip found at workspace root"
+          elif [ -f output/bootstrap-aarch64.zip ]; then
+            echo "zip found in output/, moving to workspace root"
+            mv output/bootstrap-aarch64.zip .
+          else
+            echo "FAIL: bootstrap-aarch64.zip not found in workspace or output/" 1>&2
+            ls -la output/ 1>&2 || true
+            exit 1
+          fi
+          ls -la bootstrap-aarch64.zip
+
       - name: Archive built debs
         run: |
           if ls output/*.deb >/dev/null 2>&1; then
-            tar -czf debs-aarch64.tar.gz output/
+            tar -czf debs-aarch64.tar.gz output/*.deb
           else
             echo "No debs found in output/, skipping debs archive."
           fi
@@ -83,7 +116,12 @@ jobs:
         run: |
           set -euo pipefail
           verify_dir="$(mktemp -d)"
-          python3 -c "import sys, zipfile; zipfile.ZipFile('bootstrap-aarch64.zip').extractall(sys.argv[1])" "$verify_dir"
+          python3 -c "import sys, zipfile; zipfile.ZipFile('bootstrap-aarch64.zip').extractall(sys.argv[1])" "$verify_dir" 2>"$verify_dir/extract.err" || {
+            echo "FAIL: zip extraction error:" 1>&2
+            cat "$verify_dir/extract.err" 1>&2
+            { echo "## Bootstrap verify FAILED"; echo "zip extraction error:"; sed -n '1,10p' "$verify_dir/extract.err"; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
           files=(
             "SYMLINKS.txt"
             "etc/termux/bootstrap/termux-bootstrap-second-stage.sh"
@@ -92,11 +130,13 @@ jobs:
           for file in "${files[@]}"; do
             if [ ! -f "$verify_dir/$file" ]; then
               echo "FAIL: required bootstrap file missing: '$file'" 1>&2
+              { echo "## Bootstrap verify FAILED"; echo "missing required file: \`$file\`"; } >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
             if grep -q 'com\.termux' "$verify_dir/$file"; then
               echo "FAIL: '$file' contains com.termux:" 1>&2
               grep -n 'com\.termux' "$verify_dir/$file" | head -n 10 1>&2
+              { echo "## Bootstrap verify FAILED"; echo "com.termux found in \`$file\`:"; grep -n 'com\.termux' "$verify_dir/$file" | head -n 10; } >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
           done
@@ -105,6 +145,7 @@ jobs:
             # only recorded in SYMLINKS.txt, so skip missing files.
             if [ -f "$verify_dir/bin/$bin" ] && strings "$verify_dir/bin/$bin" | grep -q '/data/data/com\.termux'; then
               echo "FAIL: bin/$bin contains /data/data/com.termux" 1>&2
+              { echo "## Bootstrap verify FAILED"; echo "com.termux path found in \`bin/$bin\`"; } >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
           done
