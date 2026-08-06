@@ -61,25 +61,13 @@ jobs:
           TERMUX_DOCKER_EXEC_EXTRA_ARGS: --env ANDROID_HOME=/home/builder/sdk-writable
         run: ./scripts/run-docker.sh ./scripts/build-bootstraps.sh --architectures aarch64
 
-      - name: Compute checksum and write bootstrap info
+      - name: Archive built debs
         run: |
-          set -euo pipefail
-          sha256sum bootstrap-aarch64.zip > bootstrap-aarch64.zip.sha256
-          {
-            echo "Fable bootstrap (com.gph.fable) build info"
-            echo "built_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "commit: $GITHUB_SHA"
-            echo "termux-packages import: $(git log -1 --format='%H %s')"
-            echo "variant: apt-android-7"
-            echo "arch: aarch64"
-            echo "TERMUX_APP__PACKAGE_NAME: com.gph.fable"
-            echo "TERMUX_PREFIX: /data/data/com.gph.fable/files/usr"
-            echo "TERMUX_HOME: /data/data/com.gph.fable/files/home"
-            echo "second_stage: /data/data/com.gph.fable/files/usr/etc/termux/bootstrap/termux-bootstrap-second-stage.sh"
-            echo "zip_entries: $(python3 -c "import zipfile; print(len(zipfile.ZipFile('bootstrap-aarch64.zip').namelist()))")"
-            echo "built_packages:"
-            ls -1 output/*.deb | sed 's/^output\///'
-          } > bootstrap-info.txt
+          if ls output/*.deb >/dev/null 2>&1; then
+            tar -czf debs-aarch64.tar.gz output/
+          else
+            echo "No debs found in output/, skipping debs archive."
+          fi
 
       - name: Store bootstrap artifacts
         uses: actions/upload-artifact@v4
@@ -87,17 +75,8 @@ jobs:
           name: bootstrap-aarch64
           path: |
             bootstrap-aarch64.zip
-            bootstrap-aarch64.zip.sha256
-            bootstrap-info.txt
-
-      - name: Archive built debs
-        run: tar -czf debs-aarch64.tar.gz output/
-
-      - name: Store debs artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: debs-aarch64
-          path: debs-aarch64.tar.gz
+            debs-aarch64.tar.gz
+          if-no-files-found: warn
 
       # Runs after artifact upload so a failure here never hides the built zip.
       - name: Verify bootstrap has no com.termux paths
@@ -152,6 +131,25 @@ jobs:
         with:
           merge-multiple: true
           path: ./release-files
+
+      - name: Compute checksum and write bootstrap info
+        run: |
+          set -euo pipefail
+          cd release-files
+          sha256sum bootstrap-aarch64.zip > bootstrap-aarch64.zip.sha256
+          {
+            echo "Fable bootstrap (com.gph.fable) build info"
+            echo "built_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "commit: $GITHUB_SHA"
+            echo "termux-packages import: $(git log -1 --format='%H %s')"
+            echo "variant: apt-android-7"
+            echo "arch: aarch64"
+            echo "TERMUX_APP__PACKAGE_NAME: com.gph.fable"
+            echo "TERMUX_PREFIX: /data/data/com.gph.fable/files/usr"
+            echo "TERMUX_HOME: /data/data/com.gph.fable/files/home"
+            echo "second_stage: /data/data/com.gph.fable/files/usr/etc/termux/bootstrap/termux-bootstrap-second-stage.sh"
+            echo "zip_entries: $(python3 -c "import zipfile; print(len(zipfile.ZipFile('bootstrap-aarch64.zip').namelist()))")"
+          } > bootstrap-info.txt
 
       - name: Create or update GitHub release
         env:
