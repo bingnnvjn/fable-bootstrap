@@ -72,13 +72,15 @@ jobs:
             "etc/profile.d/01-termux-bootstrap-second-stage-fallback.sh"
           )
           for file in "${files[@]}"; do
-            if grep -q 'com\.termux' "$verify_dir/$file"; then
+            if [ -f "$verify_dir/$file" ] && grep -q 'com\.termux' "$verify_dir/$file"; then
               echo "FAIL: '$file' contains com.termux" 1>&2
               exit 1
             fi
           done
           for bin in bash dpkg apt apt-get; do
-            if strings "$verify_dir/bin/$bin" | grep -q '/data/data/com\.termux'; then
+            # Symlinked commands (like apt-get) are removed from the zip and
+            # only recorded in SYMLINKS.txt, so skip missing files.
+            if [ -f "$verify_dir/bin/$bin" ] && strings "$verify_dir/bin/$bin" | grep -q '/data/data/com\.termux'; then
               echo "FAIL: bin/$bin contains /data/data/com.termux" 1>&2
               exit 1
             fi
