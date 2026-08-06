@@ -429,8 +429,11 @@ main() {
 
 		# Core utilities.
 		PACKAGES+=("bash") # Used by `termux-bootstrap-second-stage.sh`
-		PACKAGES+=("bzip2")
-		PACKAGES+=("curl")
+		# In current termux-packages the bzip2/curl/xz-utils binary packages are
+		# subpackages of libbz2/libcurl/liblzma. Build the parent packages; their
+		# subpackage debs are picked up by `extract_debs` below.
+		PACKAGES+=("libbz2")
+		PACKAGES+=("libcurl")
 		if ! ${BOOTSTRAP_ANDROID10_COMPATIBLE}; then
 			PACKAGES+=("command-not-found")
 		else
@@ -453,7 +456,7 @@ main() {
 		PACKAGES+=("termux-keyring")
 		PACKAGES+=("termux-tools")
 		PACKAGES+=("util-linux")
-		PACKAGES+=("xz-utils")
+		PACKAGES+=("liblzma")
 
 		# Additional.
 		PACKAGES+=("ed")
