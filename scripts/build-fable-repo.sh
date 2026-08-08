@@ -9,6 +9,9 @@
 #
 # Subpackage names (openjdk-17-x, rust-std-aarch64-linux-android, clang,
 # openssh-sftp-server, ...) resolve automatically to their parent package.
+#
+# Pass --build-only as the first argument to build into output/ and skip the
+# snapshot assembly (used when assembly runs outside the builder container).
 
 set -euo pipefail
 
@@ -17,6 +20,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 ARCH="${TERMUX_ARCH:-aarch64}"
+
+build_only=0
+if [ "${1:-}" = "--build-only" ]; then
+    build_only=1
+    shift
+fi
 
 # Normalize input: accept comma- and/or space-separated package names.
 inputs=()
@@ -61,6 +70,11 @@ echo "Parent packages    : ${parents[*]}"
 echo "Architecture       : $ARCH"
 
 ./build-package.sh -a "$ARCH" "${parents[@]}"
+
+if [ "$build_only" -eq 1 ]; then
+    echo "build-only: packages built into output/, skipping snapshot assembly"
+    exit 0
+fi
 
 export FABLE_REPO_OUTPUT_DIR="$REPO_ROOT/output"
 export FABLE_REPO_DIR="$REPO_ROOT/fable-repo"

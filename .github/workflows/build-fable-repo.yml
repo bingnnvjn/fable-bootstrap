@@ -48,10 +48,13 @@ jobs:
           export TERMUX_DOCKER_RUN_EXTRA_ARGS="--volume $PWD/.termux-build:/home/builder/.termux-build"
           ./scripts/run-docker.sh bash -c 'true'
 
-      - name: Install repo tooling in builder container
+      # The builder container's AppArmor profile blocks apt's _apt sandbox
+      # (setgroups/setuid), so repo tooling and signing run on the host runner;
+      # the container only builds packages into the mounted output/.
+      - name: Install repo tooling on runner
         run: |
-          docker exec -u root termux-package-builder bash -c \
-            'apt-get update -qq && apt-get install -y -qq --no-install-recommends dpkg-dev apt-utils'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends dpkg-dev apt-utils gnupg
 
       - name: Import fable-repo GPG signing key (secret only, never printed)
         env:
@@ -64,10 +67,10 @@ jobs:
           fi
           printf '%s' "$FABLE_REPO_GPG_PRIVATE_KEY" \
             | base64 -d \
-            | docker exec -i termux-package-builder gpg --batch --import
-          secret_keys="$(docker exec termux-package-builder gpg --batch --list-secret-keys 2>/dev/null || true)"
+            | gpg --batch --import
+          secret_keys="$(gpg --batch --list-secret-keys 2>/dev/null || true)"
           if ! printf '%s\n' "$secret_keys" | grep -q '^sec'; then
-            echo "FAIL: no secret key imported into container" 1>&2
+            echo "FAIL: no secret key imported" 1>&2
             exit 1
           fi
 
@@ -101,27 +104,35 @@ jobs:
             fi
           '
 
-      - name: Build packages and assemble fable-repo snapshot
-        env:
-          INPUT_PACKAGES: ${{ inputs.packages }}
-          FABLE_REPO_GPG_PASSPHRASE: ${{ secrets.FABLE_REPO_GPG_PASSPHRASE }}
-        run: |
-          set -euo pipefail
-          exec_extra=()
-          if [ -n "${FABLE_REPO_GPG_PASSPHRASE:-}" ]; then
-            exec_extra=(--env FABLE_REPO_GPG_PASSPHRASE)
-          fi
-          TERMUX_DOCKER_EXEC_EXTRA_ARGS="${exec_extra[*]}" \
-            ./scripts/run-docker.sh ./scripts/build-fable-repo.sh "$INPUT_PACKAGES"
-
-      - name: Verify snapshot with real apt inside builder container
+      - name: Build packages in builder container
         env:
           INPUT_PACKAGES: ${{ inputs.packages }}
         run: |
           set -euo pipefail
           TERMUX_DOCKER_EXEC_EXTRA_ARGS="" \
-            ./scripts/run-docker.sh ./scripts/fable-repo-aptcheck.sh \
-            fable-repo keys/fable-repo-pub.asc "$INPUT_PACKAGES"
+            ./scripts/run-docker.sh ./scripts/build-fable-repo.sh --build-only "$INPUT_PACKAGES"
+
+      - name: Assemble and sign fable-repo snapshot
+        env:
+          INPUT_PACKAGES: ${{ inputs.packages }}
+          FABLE_REPO_GPG_PASSPHRASE: ${{ secrets.FABLE_REPO_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          export FABLE_REPO_OUTPUT_DIR="$PWD/output"
+          export FABLE_REPO_DIR="$PWD/fable-repo"
+          export FABLE_REPO_EXPECTED_PACKAGES="$INPUT_PACKAGES"
+          if [ -n "${FABLE_REPO_GPG_PASSPHRASE:-}" ]; then
+            export FABLE_REPO_GPG_PASSPHRASE
+          fi
+          bash scripts/fable-repo-assemble.sh
+
+      - name: Verify snapshot with real apt
+        env:
+          INPUT_PACKAGES: ${{ inputs.packages }}
+        run: |
+          set -euo pipefail
+          bash scripts/fable-repo-aptcheck.sh \
+            "$PWD/fable-repo" keys/fable-repo-pub.asc "$INPUT_PACKAGES"
 
       - name: Store fable-repo snapshot
         uses: actions/upload-artifact@v4
