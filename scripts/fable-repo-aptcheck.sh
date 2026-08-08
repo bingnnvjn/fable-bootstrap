@@ -29,6 +29,10 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 command -v apt-get >/dev/null 2>&1 || die "apt-get not available"
 command -v apt-cache >/dev/null 2>&1 || die "apt-cache not available"
 
+# apt requires signed-by to be an absolute keyring path (or a fingerprint).
+REPO_DIR="$(realpath "$REPO_DIR")"
+PUBKEY="$(realpath "$PUBKEY")"
+
 TMP="$(mktemp -d)"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
