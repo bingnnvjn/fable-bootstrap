@@ -1,0 +1,190 @@
+name: Build fable-repo snapshot (aarch64, apt-android-7)
+
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: >-
+          Package names to build (space or comma separated). Subpackage names
+          (openjdk-17-x, rust-std-aarch64-linux-android, clang, ...) resolve
+          automatically to their parent package.
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: build-fable-repo
+  cancel-in-progress: true
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 600
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache termux build state and built debs
+        uses: actions/cache@v4
+        with:
+          path: |
+            .termux-build
+            output
+          key: fable-repo-${{ hashFiles('scripts/**', 'packages/**', 'build-package.sh', 'repo.json', '.github/workflows/build-fable-repo.yml') }}
+          restore-keys: |
+            fable-repo-
+
+      - name: Pull package builder image
+        run: docker pull ghcr.io/termux/package-builder:latest
+
+      # Persist the build cache outside the repo mount so it survives between
+      # workflow runs (actions/cache on .termux-build).
+      - name: Create builder container
+        run: |
+          mkdir -p .termux-build output
+          export TERMUX_DOCKER_RUN_EXTRA_ARGS="--volume $PWD/.termux-build:/home/builder/.termux-build"
+          ./scripts/run-docker.sh bash -c 'true'
+
+      - name: Install repo tooling in builder container
+        run: |
+          docker exec -u root termux-package-builder bash -c \
+            'apt-get update -qq && apt-get install -y -qq --no-install-recommends dpkg-dev apt-utils'
+
+      - name: Import fable-repo GPG signing key (secret only, never printed)
+        env:
+          FABLE_REPO_GPG_PRIVATE_KEY: ${{ secrets.FABLE_REPO_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FABLE_REPO_GPG_PRIVATE_KEY" ]; then
+            echo "FAIL: secret FABLE_REPO_GPG_PRIVATE_KEY is not set" 1>&2
+            exit 1
+          fi
+          printf '%s' "$FABLE_REPO_GPG_PRIVATE_KEY" \
+            | base64 -d \
+            | docker exec -i termux-package-builder gpg --batch --import
+          secret_keys="$(docker exec termux-package-builder gpg --batch --list-secret-keys 2>/dev/null || true)"
+          if ! printf '%s\n' "$secret_keys" | grep -q '^sec'; then
+            echo "FAIL: no secret key imported into container" 1>&2
+            exit 1
+          fi
+
+      # The package builder's restricted AppArmor profile denies writes to
+      # /home/builder/lib (where the image SDK lives), so Gradle's SDK
+      # auto-install for termux-am (platforms;android-33, build-tools;30.0.3)
+      # fails. Only packages that need the Android SDK (termux-am) require the
+      # writable SDK copy.
+      - name: Prepare writable Android SDK for termux-am
+        if: contains(inputs.packages, 'termux-am')
+        run: |
+          docker exec -u root termux-package-builder bash -c '
+            set -euo pipefail
+            SRC=/home/builder/lib/android-sdk-9123335
+            DST=/home/builder/sdk-writable
+            if [ ! -d "$DST" ]; then
+              cp -a "$SRC" "$DST"
+            fi
+            chown -R builder:builder "$DST"
+            mkdir -p "$DST/platforms" "$DST/build-tools" /tmp/sdk-install
+            cd /tmp/sdk-install
+            if [ ! -d "$DST/platforms/android-33" ]; then
+              curl -fL --retry 5 -o platform-33.zip https://dl.google.com/android/repository/platform-33-ext3_r03.zip
+              unzip -q platform-33.zip
+              mv android-13 "$DST/platforms/android-33"
+            fi
+            if [ ! -d "$DST/build-tools/30.0.3" ]; then
+              curl -fL --retry 5 -o build-tools-30.zip https://dl.google.com/android/repository/build-tools_r30.0.3-linux.zip
+              unzip -q build-tools-30.zip
+              mv android-11 "$DST/build-tools/30.0.3"
+            fi
+          '
+
+      - name: Build packages and assemble fable-repo snapshot
+        env:
+          INPUT_PACKAGES: ${{ inputs.packages }}
+          FABLE_REPO_GPG_PASSPHRASE: ${{ secrets.FABLE_REPO_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          exec_extra=()
+          if [ -n "${FABLE_REPO_GPG_PASSPHRASE:-}" ]; then
+            exec_extra=(--env FABLE_REPO_GPG_PASSPHRASE)
+          fi
+          TERMUX_DOCKER_EXEC_EXTRA_ARGS="${exec_extra[*]}" \
+            ./scripts/run-docker.sh ./scripts/build-fable-repo.sh "$INPUT_PACKAGES"
+
+      - name: Verify snapshot with real apt inside builder container
+        env:
+          INPUT_PACKAGES: ${{ inputs.packages }}
+        run: |
+          set -euo pipefail
+          TERMUX_DOCKER_EXEC_EXTRA_ARGS="" \
+            ./scripts/run-docker.sh ./scripts/fable-repo-aptcheck.sh \
+            fable-repo keys/fable-repo-pub.asc "$INPUT_PACKAGES"
+
+      - name: Store fable-repo snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: fable-repo
+          path: fable-repo/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download snapshot
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: ./release-files
+
+      - name: Write repo info and checksums
+        env:
+          INPUT_PACKAGES: ${{ inputs.packages }}
+        run: |
+          set -euo pipefail
+          cd release-files
+          {
+            echo "Fable fable-repo snapshot (com.gph.fable flat apt repository)"
+            echo "built_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "commit: $GITHUB_SHA"
+            echo "requested_packages: $INPUT_PACKAGES"
+            echo "deb_count: $(ls *.deb | wc -l)"
+            echo "sources_list: deb [signed-by=...] https://github.com/bingnnvjn/fable-bootstrap/releases/latest/download/ ./"
+            echo "public_key_assets: fable-repo-pub.asc (armored) / fable-repo-pub.gpg (binary)"
+          } > repo-info.txt
+          sha256sum *.deb Packages Packages.gz Release InRelease Release.gpg \
+            fable-repo-pub.asc fable-repo-pub.gpg > SHA256SUMS
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          new_date_tag="fable-repo-$(date -u "+%Y.%m.%d")"
+          existing_tags="$(git ls-remote --tags origin 2>/dev/null | awk '{print $2}' | sed 's#refs/tags/##' | grep -E "^${new_date_tag}-r[0-9]+$" || true)"
+          if [ -n "$existing_tags" ]; then
+            rev="$(printf '%s\n' "$existing_tags" | sed -E "s/^${new_date_tag}-r([0-9]+)$/\1/" | sort -n | tail -n 1)"
+            rev=$((rev + 1))
+          else
+            rev=1
+          fi
+          new_tag="${new_date_tag}-r${rev}"
+          echo "Release tag: $new_tag"
+          if gh release view "$new_tag" >/dev/null 2>&1; then
+            gh release upload "$new_tag" release-files/* --clobber
+          else
+            gh release create "$new_tag" release-files/* \
+              --title "Fable fable-repo snapshot (aarch64)" \
+              --notes "Flat apt repository for com.gph.fable. Triggered by workflow run $GITHUB_RUN_ID. Stable URL: https://github.com/bingnnvjn/fable-bootstrap/releases/latest/download/"
+          fi

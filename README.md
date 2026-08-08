@@ -52,3 +52,50 @@ The Termux Community docs are available [here](https://github.com/termux/termux-
 [<img alt="Cloudflare" width="25%" src="site/assets/sponsors/cloudflare.png" />](https://www.cloudflare.com)  
 *[Cloudflare](https://www.cloudflare.com) ([1](https://packages-cf.termux.dev))*
 
+---
+
+# Fable bootstrap & fable-repo
+
+This fork of termux-packages is used to build bootstrap archives and an APT
+repository for the **com.gph.fable** prefix
+(`/data/data/com.gph.fable/files/usr`).
+
+## Fable package repository (fable-repo)
+
+`fable-repo` is a flat APT repository hosted on this repository's GitHub
+Releases. It is the only package source for Fable environments (official
+termux-main packages are built for the `com.termux` prefix and are not
+usable there).
+
+### Build on demand
+
+Run the **Build fable-repo snapshot** workflow (manual dispatch) and enter the
+package names to build. Every run:
+
+1. builds the requested packages plus their dependency closure (aarch64);
+2. merges them with everything already built (via `actions/cache` on `output/`);
+3. generates `Packages` / `Packages.gz` + `Release` / `InRelease` (GPG-signed
+   with the fable-repo key; the private key exists only in Actions secrets);
+4. self-checks signature, index hashes, package presence, absence of
+   `com.termux` prefix paths, and verifies the index with real `apt`;
+5. publishes a full snapshot as a new GitHub Release
+   (`fable-repo-YYYY.MM.DD-rN`), which becomes the new
+   `releases/latest/download/` snapshot.
+
+Subpackage names (`openjdk-17-x`, `rust-std-aarch64-linux-android`, `clang`,
+`openssh-sftp-server`, ...) are resolved to their parent package
+(`openjdk-17`, `rust`, `libllvm`, `openssh`, ...) automatically.
+
+### Fable-side sources.list (used by ticket 18)
+
+```text
+deb [signed-by=/data/data/com.gph.fable/files/usr/etc/apt/trusted.gpg.d/fable-repo-pub.gpg] https://github.com/bingnnvjn/fable-bootstrap/releases/latest/download/ ./
+```
+
+`releases/latest/download/` is stable: every new snapshot automatically becomes
+the current source. Public key assets: `fable-repo-pub.asc` (armored) and
+`fable-repo-pub.gpg` (binary) in every snapshot.
+
+### GPG key
+
+See `keys/README.md` for key facts, secret setup, and rotation.

@@ -30,6 +30,9 @@ checksum*
 # Preinstalled build tools.
 /build-tools/
 
+# fable-repo build cache (persisted via actions/cache).
+/.termux-build/
+
 # Predownloaded packages sources.
 /packages/*/cache
 /root-packages/*/cache
