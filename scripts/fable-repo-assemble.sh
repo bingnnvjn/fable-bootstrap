@@ -59,6 +59,21 @@ rm -rf "$REPO_DIR"
 mkdir -p "$REPO_DIR"
 cp -f "$OUTPUT_DIR"/*.deb "$REPO_DIR"/
 
+# Sanitize .deb filenames: epoch colons and other characters outside
+# [A-Za-z0-9._-] break GitHub release assets (they get renamed, so apt's
+# Filename lookups 404) and actions/upload-artifact (colons are rejected).
+# The deb control Version is untouched, so dpkg/apt semantics are unchanged.
+renamed=0
+for f in "$REPO_DIR"/*.deb; do
+    base="$(basename "$f")"
+    safe="$(printf '%s' "$base" | sed 's/[^A-Za-z0-9._-]/-/g')"
+    if [ "$safe" != "$base" ]; then
+        mv -f "$f" "$REPO_DIR/$safe"
+        renamed=$((renamed + 1))
+    fi
+done
+[ "$renamed" -eq 0 ] || echo "renamed $renamed .deb filename(s) for GitHub/artifact safety"
+
 # Ship the public key in both armored and binary (keybox-friendly) forms.
 cp -f "$PUBKEY" "$REPO_DIR/fable-repo-pub.asc"
 if ! gpg --dearmor < "$PUBKEY" > "$REPO_DIR/fable-repo-pub.gpg" 2>/dev/null; then
@@ -68,6 +83,9 @@ fi
 cd "$REPO_DIR"
 
 dpkg-scanpackages -m . /dev/null > Packages 2>/dev/null || die "dpkg-scanpackages failed"
+# Strip the "./" prefix dpkg-scanpackages emits so apt requests clean
+# relative URLs (e.g. releases/download/<tag>/<deb> without a dot segment).
+sed -i 's#^Filename: \./#Filename: #' Packages
 gzip -9n -c Packages > Packages.gz
 
 apt-ftparchive release \
