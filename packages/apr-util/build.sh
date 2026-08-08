@@ -4,10 +4,9 @@ TERMUX_PKG_LICENSE="Apache-2.0"
 TERMUX_PKG_MAINTAINER="@termux"
 TERMUX_PKG_VERSION=1.6.3
 TERMUX_PKG_REVISION=3
-# downloads.apache.org no longer hosts 1.6.3; fall back to the Apache archive.
-TERMUX_PKG_SRCURL="https://downloads.apache.org/apr/apr-util-${TERMUX_PKG_VERSION}.tar.gz https://archive.apache.org/dist/apr/apr-util-${TERMUX_PKG_VERSION}.tar.gz"
-# Same tarball on both mirrors, so the checksum is repeated once per URL.
-TERMUX_PKG_SHA256="2b74d8932703826862ca305b094eef2983c27b39d5c9414442e9976a9acf1983 2b74d8932703826862ca305b094eef2983c27b39d5c9414442e9976a9acf1983"
+# downloads.apache.org no longer hosts 1.6.3 (404); use the Apache archive.
+TERMUX_PKG_SRCURL=https://archive.apache.org/dist/apr/apr-util-${TERMUX_PKG_VERSION}.tar.gz
+TERMUX_PKG_SHA256=2b74d8932703826862ca305b094eef2983c27b39d5c9414442e9976a9acf1983
 TERMUX_PKG_DEPENDS="apr, libcrypt, libexpat, libiconv, libuuid"
 TERMUX_PKG_BREAKS="apr-util-dev"
 TERMUX_PKG_REPLACES="apr-util-dev"
