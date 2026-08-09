@@ -33,7 +33,9 @@ jobs:
           path: |
             .termux-build
             output
-          key: fable-repo-${{ hashFiles('scripts/**', 'packages/**', 'build-package.sh', 'repo.json', '.github/workflows/build-fable-repo.yml') }}
+          # Workflow file excluded on purpose: CI edits must not invalidate
+          # hours of package build cache.
+          key: fable-repo-${{ hashFiles('scripts/**', 'packages/**', 'build-package.sh', 'repo.json') }}
           restore-keys: |
             fable-repo-
 
