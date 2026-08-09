@@ -76,11 +76,12 @@ jobs:
 
       # The package builder's restricted AppArmor profile denies writes to
       # /home/builder/lib (where the image SDK lives), so Gradle's SDK
-      # auto-install for termux-am (platforms;android-33, build-tools;30.0.3)
-      # fails. Only packages that need the Android SDK (termux-am) require the
-      # writable SDK copy.
+      # auto-install (e.g. termux-am: platforms;android-33,
+      # build-tools;30.0.3) fails with "Failed to read or create install
+      # properties file". termux-am can enter the dependency closure from
+      # packages that do not mention it in the workflow input, so always
+      # prepare the writable SDK copy.
       - name: Prepare writable Android SDK for termux-am
-        if: contains(inputs.packages, 'termux-am')
         run: |
           docker exec -u root termux-package-builder bash -c '
             set -euo pipefail
