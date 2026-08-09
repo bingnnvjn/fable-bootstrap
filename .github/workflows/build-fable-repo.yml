@@ -110,7 +110,7 @@ jobs:
           INPUT_PACKAGES: ${{ inputs.packages }}
         run: |
           set -euo pipefail
-          TERMUX_DOCKER_EXEC_EXTRA_ARGS="" \
+          TERMUX_DOCKER_EXEC_EXTRA_ARGS="--env ANDROID_HOME=/home/builder/sdk-writable" \
             ./scripts/run-docker.sh ./scripts/build-fable-repo.sh --build-only "$INPUT_PACKAGES"
 
       - name: Assemble and sign fable-repo snapshot
