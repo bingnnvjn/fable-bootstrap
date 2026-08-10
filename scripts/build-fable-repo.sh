@@ -20,6 +20,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 ARCH="${TERMUX_ARCH:-aarch64}"
+JOBS="${FABLE_REPO_BUILD_JOBS:-4}"
 
 build_only=0
 if [ "${1:-}" = "--build-only" ]; then
@@ -68,8 +69,9 @@ done
 echo "Requested packages : ${inputs[*]}"
 echo "Parent packages    : ${parents[*]}"
 echo "Architecture       : $ARCH"
+echo "Build jobs (-j)    : $JOBS"
 
-./build-package.sh -a "$ARCH" "${parents[@]}"
+./build-package.sh -a "$ARCH" -j "$JOBS" "${parents[@]}"
 
 if [ "$build_only" -eq 1 ]; then
     echo "build-only: packages built into output/, skipping snapshot assembly"

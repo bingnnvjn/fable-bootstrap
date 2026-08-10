@@ -15,9 +15,6 @@ link-shared = true
 host = ["@CARGO_TARGET_NAME@"]
 target = [
     "aarch64-linux-android",
-    "armv7-linux-androideabi",
-    "i686-linux-android",
-    "x86_64-linux-android",
 ]
 rustc = "@RUSTC@"
 cargo = "@CARGO@"
@@ -57,26 +54,6 @@ rpath = true
 llvm-config = "@TERMUX_PREFIX@/bin/llvm-config"
 profiler = true
 
-[target.armv7-linux-androideabi]
-llvm-config = "@TERMUX_PREFIX@/bin/llvm-config"
-profiler = true
-
-[target.i686-linux-android]
-llvm-config = "@TERMUX_PREFIX@/bin/llvm-config"
-profiler = true
-
-[target.x86_64-linux-android]
-llvm-config = "@TERMUX_PREFIX@/bin/llvm-config"
-profiler = true
-
-[target.wasm32-wasip1]
-wasi-root = "@TERMUX_PREFIX@/share/wasi-sysroot"
-
-[target.wasm32-wasip2]
-wasi-root = "@TERMUX_PREFIX@/share/wasi-sysroot"
-
-[target.wasm32-wasip3]
-wasi-root = "@TERMUX_PREFIX@/share/wasi-sysroot"
 
 [dist]
 src-tarball = false

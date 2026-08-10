@@ -7,7 +7,10 @@ TERMUX_PKG_VERSION="1.97.1"
 TERMUX_PKG_SRCURL="https://static.rust-lang.org/dist/rustc-${TERMUX_PKG_VERSION}-src.tar.xz"
 TERMUX_PKG_SHA256=0ed06fdaffd4722a7702e0b4eebfafc897ab8f513e8e1b247cdd7e5c6df6ded2
 TERMUX_PKG_DEPENDS="clang, libandroid-execinfo, libc++, libllvm (<< $TERMUX_LLVM_NEXT_MAJOR_VERSION), lld, openssl, zlib"
-TERMUX_PKG_BUILD_DEPENDS="wasi-libc"
+# Fork adaptation (fable-repo): aarch64-only builds. Upstream builds rust-std
+# for armv7/i686/x86_64/wasm32 and needs wasi-libc; GitHub Actions cancels
+# runs at 6h, so only the aarch64 std target is built here.
+TERMUX_PKG_BUILD_DEPENDS=""
 TERMUX_PKG_SUGGESTS="rust-analyzer"
 TERMUX_PKG_NO_REPLACE_GUESS_SCRIPTS=true
 TERMUX_PKG_NO_STATICSPLIT=true
@@ -17,7 +20,6 @@ bin/llc
 bin/llvm-*
 bin/opt
 bin/sh
-share/wasi-sysroot
 "
 
 termux_pkg_auto_update() {
@@ -157,16 +159,6 @@ termux_step_configure() {
 	local RUSTC=$(command -v rustc)
 	local CARGO=$(command -v cargo)
 
-	# rust 1.89.0
-	export WASI_SDK_PATH="${TERMUX_PKG_TMPDIR}/wasi-sdk"
-	rm -fr "${WASI_SDK_PATH}"
-	mkdir -p "${WASI_SDK_PATH}"/{bin,share}
-	ln -fsv "${TERMUX_PREFIX}/share/wasi-sysroot" "${WASI_SDK_PATH}/share/wasi-sysroot"
-	local clang
-	for clang in wasm32-wasip{1,2,3}-clang{,++}; do
-		ln -fsv "$(command -v clang)" "${WASI_SDK_PATH}/bin/${clang}"
-	done
-
 	if [[ "${TERMUX_ON_DEVICE_BUILD}" == "true" ]]; then
 		local dir="${TERMUX_STANDALONE_TOOLCHAIN}/toolchains/llvm/prebuilt/linux-x86_64/bin"
 		mkdir -p "${dir}"
@@ -215,8 +207,6 @@ termux_step_configure() {
 
 	unset CC CFLAGS CFLAGS_${env_host} CPP CPPFLAGS CXX CXXFLAGS LD LDFLAGS PKG_CONFIG RANLIB
 
-	# Needed by wasm32-wasip2
-	cargo install wasm-component-ld
 }
 
 termux_step_make() {
@@ -233,16 +223,6 @@ termux_step_make_install() {
 	# https://github.com/termux/termux-packages/issues/25360
 	# build to stage 2 to fix rust-analyzer error
 	"${TERMUX_PKG_SRCDIR}/x.py" "${job}" -j "${TERMUX_PKG_MAKE_PROCESSES}" --stage 2
-
-	# wasm32* not added into bootstrap.toml
-	# due to CI and on device build error:
-	# error: could not document `std`
-	"${TERMUX_PKG_SRCDIR}/x.py" install -j "${TERMUX_PKG_MAKE_PROCESSES}" --target wasm32-unknown-unknown --stage 2 std
-	"${TERMUX_PKG_SRCDIR}/x.py" install -j "${TERMUX_PKG_MAKE_PROCESSES}" --target wasm32v1-none --stage 2 std
-	[[ ! -e "${TERMUX_PREFIX}/share/wasi-sysroot" ]] && termux_error_exit "wasi-sysroot not found"
-	"${TERMUX_PKG_SRCDIR}/x.py" install -j "${TERMUX_PKG_MAKE_PROCESSES}" --target wasm32-wasip1 --stage 2 std
-	"${TERMUX_PKG_SRCDIR}/x.py" install -j "${TERMUX_PKG_MAKE_PROCESSES}" --target wasm32-wasip2 --stage 2 std
-	"${TERMUX_PKG_SRCDIR}/x.py" install -j "${TERMUX_PKG_MAKE_PROCESSES}" --target wasm32-wasip3 --stage 2 std
 
 	"${TERMUX_PKG_SRCDIR}/x.py" dist -j "${TERMUX_PKG_MAKE_PROCESSES}" --stage 2 rustc-dev
 

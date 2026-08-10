@@ -10,6 +10,11 @@ on:
           automatically to their parent package.
         required: true
         type: string
+      build_jobs:
+        description: Build parallelism (-j) passed to build-package.sh (default 4)
+        required: false
+        default: '4'
+        type: string
 
 permissions: {}
 
@@ -110,9 +115,14 @@ jobs:
       - name: Build packages in builder container
         env:
           INPUT_PACKAGES: ${{ inputs.packages }}
+          FABLE_REPO_BUILD_JOBS: ${{ inputs.build_jobs }}
         run: |
           set -euo pipefail
-          TERMUX_DOCKER_EXEC_EXTRA_ARGS="--env ANDROID_HOME=/home/builder/sdk-writable" \
+          exec_extra=(--env ANDROID_HOME=/home/builder/sdk-writable)
+          if [ -n "${FABLE_REPO_BUILD_JOBS:-}" ]; then
+            exec_extra+=(--env FABLE_REPO_BUILD_JOBS)
+          fi
+          TERMUX_DOCKER_EXEC_EXTRA_ARGS="${exec_extra[*]}" \
             ./scripts/run-docker.sh ./scripts/build-fable-repo.sh --build-only "$INPUT_PACKAGES"
 
       - name: Assemble and sign fable-repo snapshot
