@@ -10,7 +10,6 @@ TERMUX_PKG_DEPENDS="clang, libandroid-execinfo, libc++, libllvm (<< $TERMUX_LLVM
 # Fork adaptation (fable-repo): aarch64-only builds. Upstream builds rust-std
 # for armv7/i686/x86_64/wasm32 and needs wasi-libc; GitHub Actions cancels
 # runs at 6h, so only the aarch64 std target is built here.
-TERMUX_PKG_BUILD_DEPENDS=""
 TERMUX_PKG_SUGGESTS="rust-analyzer"
 TERMUX_PKG_NO_REPLACE_GUESS_SCRIPTS=true
 TERMUX_PKG_NO_STATICSPLIT=true
