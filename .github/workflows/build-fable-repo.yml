@@ -39,9 +39,12 @@ jobs:
             .termux-build
             output
           # Workflow file excluded on purpose: CI edits must not invalidate
-          # hours of package build cache.
-          key: fable-repo-${{ hashFiles('scripts/**', 'packages/**', 'build-package.sh', 'repo.json') }}
+          # hours of package build cache. run_id suffix makes every run save a
+          # distinct entry; without it GitHub skips saving when the key already
+          # exists, losing packages added by later runs of the same content.
+          key: fable-repo-${{ hashFiles('scripts/**', 'packages/**', 'build-package.sh', 'repo.json') }}-${{ github.run_id }}
           restore-keys: |
+            fable-repo-${{ hashFiles('scripts/**', 'packages/**', 'build-package.sh', 'repo.json') }}-
             fable-repo-
 
       - name: Pull package builder image
