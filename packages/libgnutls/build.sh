@@ -4,9 +4,9 @@ TERMUX_PKG_LICENSE="LGPL-2.1, GPL-3.0"
 TERMUX_PKG_MAINTAINER="@termux"
 TERMUX_PKG_VERSION="3.8.13"
 TERMUX_PKG_REVISION=1
-# gnupg.org currently returns HTTP 403 from GitHub-hosted builders; use a
-# public mirror carrying the same upstream tarball and verified SHA256.
-TERMUX_PKG_SRCURL="https://mirrors.mit.edu/macports/distfiles/gnutls/gnutls-${TERMUX_PKG_VERSION}.tar.xz"
+# gnupg.org returns HTTP 403 and the MIT mirror times out from GitHub-hosted
+# builders; Fossies carries the same upstream tarball and verified SHA256.
+TERMUX_PKG_SRCURL="https://fossies.org/linux/misc/gnutls-${TERMUX_PKG_VERSION}.tar.xz"
 TERMUX_PKG_SHA256=ffed8ec1bf09c2426d4f14aae377de4753b53e537d685e604e99a8b16ca9c97e
 TERMUX_PKG_DEPENDS="libc++, libgmp, libnettle, ca-certificates, libidn2, libtasn1, libunbound, libunistring, p11-kit, zlib"
 TERMUX_PKG_BREAKS="libgnutls-dev"
