@@ -27,7 +27,10 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 600
+    # Keep 15 minutes below GitHub Actions' 6-hour job limit so a stalled
+    # package closure stops predictably; the next smaller batch can restore
+    # previously saved build cache.
+    timeout-minutes: 345
     steps:
       - name: Checkout
         uses: actions/checkout@v4
