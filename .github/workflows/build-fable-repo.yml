@@ -50,6 +50,24 @@ jobs:
             fable-repo-${{ hashFiles('scripts/**', 'packages/**', 'build-package.sh', 'repo.json') }}-
             fable-repo-
 
+      # Each release is a full flat-repo snapshot. Build cache accelerates
+      # compilation but cannot be its source of truth: cache eviction or a
+      # changed key must not make an incremental publish discard older debs.
+      - name: Seed output from latest fable-repo snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          find output -maxdepth 1 -type f -name '*.deb' -delete
+          if gh release view --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release download --repo "$GITHUB_REPOSITORY" \
+              --pattern '*.deb' --dir output
+            echo "Seeded $(find output -maxdepth 1 -name '*.deb' | wc -l) debs from latest snapshot"
+          else
+            echo "No prior fable-repo snapshot; starting empty"
+          fi
+
       - name: Pull package builder image
         run: docker pull ghcr.io/termux/package-builder:latest
 
