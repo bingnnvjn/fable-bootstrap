@@ -53,17 +53,24 @@ jobs:
       # Each release is a full flat-repo snapshot. Build cache accelerates
       # compilation but cannot be its source of truth: cache eviction or a
       # changed key must not make an incremental publish discard older debs.
-      - name: Seed output from latest fable-repo snapshot
+      - name: Seed output from stable fable-repo snapshot
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          stable_tag="fable-repo-current"
+          seed_tag="$stable_tag"
           mkdir -p output
           find output -maxdepth 1 -type f -name '*.deb' -delete
-          if gh release view --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release download --repo "$GITHUB_REPOSITORY" \
+          if ! gh release view "$seed_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            seed_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+              --json tagName,publishedAt \
+              --jq 'map(select(.tagName | test("^fable-repo-[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}-r[0-9]+$"))) | sort_by(.publishedAt) | last | .tagName // empty')"
+          fi
+          if [ -n "$seed_tag" ]; then
+            gh release download "$seed_tag" --repo "$GITHUB_REPOSITORY" \
               --pattern '*.deb' --dir output
-            echo "Seeded $(find output -maxdepth 1 -name '*.deb' | wc -l) debs from latest snapshot"
+            echo "Seeded $(find output -maxdepth 1 -name '*.deb' | wc -l) debs from $seed_tag"
           else
             echo "No prior fable-repo snapshot; starting empty"
           fi
@@ -208,7 +215,7 @@ jobs:
             echo "commit: $GITHUB_SHA"
             echo "requested_packages: $INPUT_PACKAGES"
             echo "deb_count: $(ls *.deb | wc -l)"
-            echo "sources_list: deb [signed-by=...] https://github.com/bingnnvjn/fable-bootstrap/releases/latest/download/ ./"
+            echo "sources_list: deb [signed-by=...] https://github.com/bingnnvjn/fable-bootstrap/releases/download/fable-repo-current/ ./"
             echo "public_key_assets: fable-repo-pub.asc (armored) / fable-repo-pub.gpg (binary)"
           } > repo-info.txt
           sha256sum *.deb Packages Packages.gz Release InRelease Release.gpg \
@@ -228,11 +235,19 @@ jobs:
             rev=1
           fi
           new_tag="${new_date_tag}-r${rev}"
-          echo "Release tag: $new_tag"
+          stable_tag="fable-repo-current"
+          echo "Snapshot tag: $new_tag"
           if gh release view "$new_tag" >/dev/null 2>&1; then
             gh release upload "$new_tag" release-files/* --clobber
           else
             gh release create "$new_tag" release-files/* \
               --title "Fable fable-repo snapshot (aarch64)" \
-              --notes "Flat apt repository for com.gph.fable. Triggered by workflow run $GITHUB_RUN_ID. Stable URL: https://github.com/bingnnvjn/fable-bootstrap/releases/latest/download/"
+              --notes "Flat apt repository for com.gph.fable. Triggered by workflow run $GITHUB_RUN_ID."
+          fi
+          if gh release view "$stable_tag" >/dev/null 2>&1; then
+            gh release upload "$stable_tag" release-files/* --clobber
+          else
+            gh release create "$stable_tag" release-files/* \
+              --title "Fable fable-repo stable" \
+              --notes "Stable flat apt repository for com.gph.fable. Updated by workflow run $GITHUB_RUN_ID."
           fi
